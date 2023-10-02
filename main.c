@@ -11,13 +11,14 @@
 #include <stdlib.h>
 
 #include <string.h>
+#include <time.h>
 #include <utils.h>
 
-#define MONITOR 2
+#define MONITOR 0
 #define WINDOW_SIZE 500
 
-#define BG 0xF8F8F2
-#define FG 0x282A36
+#define FG 0xF8F8F2
+#define BG 0x282A36
 
 typedef struct {
 	Window   window;
@@ -57,6 +58,18 @@ void print_array_int(int *buffer, int n) {
 		printf("%i, ", buffer[i]);
 	}
 	printf("\n");
+}
+
+void load_info() {
+	FILE *info = fopen("/home/carlo/.local/share/trax.info", "r");
+	fread(&cursor_y, sizeof(int), sizeof(int), info);
+	fclose(info);
+}
+
+void save_info() {
+	FILE *info = fopen("/home/carlo/.local/share/trax.info", "w");
+	fwrite(&cursor_y, sizeof(int), sizeof(int), info);
+	fclose(info);
 }
 
 int open_file() {
@@ -204,8 +217,14 @@ int init_x() {
 };
 
 int grab_keyboard() {
-	if (XGrabKeyboard(display, DefaultRootWindow(display), True, GrabModeAsync, GrabModeAsync, CurrentTime) == GrabSuccess)
-		return 1;
+	struct timespec ts = { .tv_sec = 0, .tv_nsec = 1000000 };
+
+	for (int i = 0; i < 1000; i++) {
+		if (XGrabKeyboard(display, DefaultRootWindow(display), True, GrabModeAsync, GrabModeAsync, CurrentTime) == GrabSuccess)
+			return 1;
+		nanosleep(&ts, NULL);
+	}
+
 	return 0;
 }
 
@@ -221,6 +240,7 @@ void close_x() {
 	free(panels);
 	XCloseDisplay(display);	
 	save();
+	save_info();
 
 	for (int i = 0; i < texts_size; i++) {
 		free(texts[i]);
@@ -460,6 +480,16 @@ void remove_from_text() {
 		reset_panels();
 };
 
+void remove_line() {
+	int cursor_i = cursor_index();
+
+	while (text[cursor_i - 1] != '\n' && cursor_i > 2) {
+		remove_from_text();
+		cursor_i = cursor_index();
+	}
+	remove_from_text();
+}
+
 void on_key_press(XKeyEvent* event) {
 	int len;
 	KeySym key_symbol;
@@ -468,11 +498,15 @@ void on_key_press(XKeyEvent* event) {
 	len = XmbLookupString(xic, event, buffer, sizeof(buffer), &key_symbol, &status);
 
 	switch (key_symbol) {
+	case XK_Menu:
 	case XK_Escape:
 		close_x();
 		break;
 	case XK_Up:
 		cursor_y = cursor_y > 0 ? cursor_y - 1 : 0;
+		break;
+	case XK_Tab:
+		remove_line();
 		break;
 	case XK_Down:
 		cursor_y = cursor_y < all_number_of_lines() - 1 ? cursor_y + 1 : cursor_y;
@@ -500,9 +534,9 @@ int main () {
 	text[0] = '\n';
 	text[1] = '\0';
 
-	if (open_file() == 1) {
+	load_info();
+	if (open_file() == 1)
 		return 1;
-	}
 	if (!init_x())
 		return 2;
 	if (!grab_keyboard())
